@@ -1,6 +1,6 @@
 """
 Document Ingestion Module
-Handles loading, chunking, and embedding documents into Weaviate
+Handles loading, chunking, and embedding documents into ChromaDB using sentence-transformers
 """
 
 import os
@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 import logging
 
-from config import get_ollama_embedding, Config, init_weaviate, create_collection
-from weaviate.classes.query import MetadataQuery
+from config import Config
+import chromadb
+from chromadb.config import Settings
+from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +109,33 @@ class TextChunker:
         return chunks
 
 
+class EmbeddingGenerator:
+    """Generate embeddings using sentence-transformers"""
+
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+        self.model_name = model_name
+        self.model = None
+        self._load_model()
+
+    def _load_model(self):
+        """Load the sentence transformer model"""
+        try:
+            self.model = SentenceTransformer(self.model_name)
+            logger.info(f"Loaded embedding model: {self.model_name}")
+        except Exception as e:
+            logger.error(f"Failed to load embedding model {self.model_name}: {e}")
+            raise
+
+    def encode(self, texts: List[str]) -> List[List[float]]:
+        """Encode texts to embeddings"""
+        if not self.model:
+            self._load_model()
+        embeddings = self.model.encode(texts)
+        return embeddings.tolist()
+
+
 class DocumentIngester:
-    """Main ingestion pipeline"""
+    """Main ingestion pipeline using ChromaDB"""
 
     def __init__(self, config: Config):
         self.config = config
@@ -116,19 +143,38 @@ class DocumentIngester:
             chunk_size=config.get("chunk_size"),
             overlap=config.get("chunk_overlap")
         )
+        self.embedder = EmbeddingGenerator(
+            model_name=config.get("embedding_model")
+        )
         self.client = None
         self.collection = None
 
     def initialize(self):
-        """Initialize Weaviate client and collection"""
-        self.client = init_weaviate(self.config)
-        create_collection(
-            self.client,
-            self.config.get("collection_name"),
-            self.config.get("embedding_dim")
-        )
-        self.collection = self.client.collections.get(self.config.get("collection_name"))
-        logger.info("Document ingester initialized")
+        """Initialize ChromaDB client and collection"""
+        try:
+            # Create data directory if it doesn't exist
+            chromadb_path = self.config.get("chromadb_data_path")
+            Path(chromadb_path).mkdir(parents=True, exist_ok=True)
+            
+            # Initialize ChromaDB client
+            self.client = chromadb.PersistentClient(path=chromadb_path)
+            
+            # Get or create collection
+            collection_name = self.config.get("collection_name")
+            try:
+                self.collection = self.client.get_collection(name=collection_name)
+                logger.info(f"Using existing collection: {collection_name}")
+            except Exception:
+                self.collection = self.client.create_collection(
+                    name=collection_name,
+                    metadata={"description": "Document chunks for RAG"}
+                )
+                logger.info(f"Created new collection: {collection_name}")
+                
+            logger.info("Document ingester initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize ChromaDB: {e}")
+            raise
 
     def ingest_file(self, file_path: str) -> int:
         """Ingest a single file"""
@@ -139,36 +185,39 @@ class DocumentIngester:
             return 0
 
         chunks = self.chunker.split_text(text)
-        count = 0
+        if not chunks:
+            logger.warning(f"No chunks generated from {file_path}")
+            return 0
 
-        for idx, chunk in enumerate(chunks):
-            try:
-                embedding = get_ollama_embedding(
-                    chunk,
-                    model=self.config.get("ollama_model"),
-                    host=self.config.get("ollama_host")
-                )
+        # Generate embeddings for all chunks
+        logger.info(f"Generating embeddings for {len(chunks)} chunks...")
+        embeddings = self.embedder.encode(chunks)
 
-                self.collection.data.insert({
-                    "content": chunk,
-                    "source": str(file_path),
-                    "chunk_index": idx,
-                    "metadata": {
-                        "total_chunks": len(chunks),
-                        "file_type": Path(file_path).suffix.lower(),
-                        "file_name": Path(file_path).name
-                    }
-                }, vector=embedding)
+        # Prepare data for ChromaDB
+        ids = [f"{Path(file_path).stem}_{i}" for i in range(len(chunks))]
+        metadatas = []
+        for i, chunk in enumerate(chunks):
+            metadatas.append({
+                "source": str(file_path),
+                "chunk_index": i,
+                "total_chunks": len(chunks),
+                "file_type": Path(file_path).suffix.lower(),
+                "file_name": Path(file_path).name
+            })
 
-                count += 1
-                if count % 10 == 0:
-                    logger.info(f"Ingested {count} chunks...")
-
-            except Exception as e:
-                logger.error(f"Failed to ingest chunk {idx}: {e}")
-
-        logger.info(f"Successfully ingested {count} chunks from {file_path}")
-        return count
+        # Add to collection
+        try:
+            self.collection.add(
+                embeddings=embeddings,
+                documents=chunks,
+                metadatas=metadatas,
+                ids=ids
+            )
+            logger.info(f"Successfully ingested {len(chunks)} chunks from {file_path}")
+            return len(chunks)
+        except Exception as e:
+            logger.error(f"Failed to add chunks to ChromaDB: {e}")
+            return 0
 
     def ingest_directory(self, directory: str) -> int:
         """Ingest all supported documents in directory"""
@@ -192,39 +241,39 @@ class DocumentIngester:
     def search(self, query: str, limit: int = 3) -> List[Dict]:
         """Search for relevant document chunks"""
         try:
-            query_embedding = get_ollama_embedding(
-                query,
-                model=self.config.get("ollama_model"),
-                host=self.config.get("ollama_host")
+            # Generate embedding for query
+            query_embedding = self.embedder.encode([query])[0]
+            
+            # Search in ChromaDB
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=limit,
+                include=["documents", "metadatas", "distances"]
             )
-
-            collection = self.client.collections.get(self.config.get("collection_name"))
-            results = collection.query.near_vector(
-                near_vector=query_embedding,
-                limit=limit,
-                return_properties=["content", "source", "chunk_index", "metadata"],
-                return_metadata=MetadataQuery(distance=True)
-            )
-
-            return [
-                {
-                    "content": obj.properties["content"],
-                    "source": obj.properties["source"],
-                    "chunk_index": obj.properties["chunk_index"],
-                    "metadata": obj.properties.get("metadata", {}),
-                    "score": obj.metadata.distance if obj.metadata else 0
-                }
-                for obj in results.objects
-            ]
+            
+            # Format results
+            documents = []
+            if results['documents'] and results['documents'][0]:
+                for i, doc in enumerate(results['documents'][0]):
+                    documents.append({
+                        "content": doc,
+                        "source": results['metadatas'][0][i].get("source", "Unknown"),
+                        "chunk_index": results['metadatas'][0][i].get("chunk_index", 0),
+                        "metadata": results['metadatas'][0][i],
+                        "score": 1 - results['distances'][0][i] if results['distances'] and results['distances'][0] else 0  # Convert distance to similarity
+                    })
+            
+            return documents
         except Exception as e:
             logger.error(f"Search failed: {e}")
             return []
 
     def close(self):
-        """Close Weaviate client"""
+        """Close ChromaDB client"""
+        # ChromaDB PersistentClient doesn't need explicit closing
+        # but we'll keep the method for compatibility
         if self.client:
-            self.client.close()
-            logger.info("Weaviate client closed")
+            logger.info("ChromaDB client closed")
 
 
 def main():

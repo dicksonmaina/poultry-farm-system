@@ -1,14 +1,13 @@
 """
 RAG Pipeline
-Handles retrieval and generation using Ollama LLM
+Handles retrieval and generation using sentence-transformers and Groq
 """
 
 import logging
 from typing import List, Dict, Optional
-import requests
-import json
+from groq import Groq
 
-from config import Config, get_ollama_embedding
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +18,8 @@ class RAGPipeline:
     def __init__(self, config: Config, ingester):
         self.config = config
         self.ingester = ingester
+        # Initialize Groq client
+        self.groq_client = Groq(api_key=config.get("groq_api_key"))
 
     def retrieve(self, query: str, top_k: int = 3) -> List[Dict]:
         """Retrieve relevant document chunks"""
@@ -40,7 +41,7 @@ class RAGPipeline:
         return "\n\n".join(context_parts)
 
     def generate(self, query: str, context: str) -> str:
-        """Generate answer using Ollama LLM"""
+        """Generate answer using Groq LLM"""
         system_prompt = """You are a helpful assistant that answers questions based on the provided document context.
 Follow these rules:
 1. Only use information from the provided context.
@@ -57,23 +58,25 @@ Question: {query}
 Please answer based on the context above."""
 
         try:
-            response = requests.post(
-                f"{self.config.get('ollama_host')}/api/generate",
-                json={
-                    "model": self.config.get("ollama_model"),
-                    "prompt": user_prompt,
-                    "system": system_prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.7,
-                        "top_p": 0.9,
-                        "num_predict": 512
+            chat_completion = self.groq_client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": system_prompt
+                    },
+                    {
+                        "role": "user",
+                        "content": user_prompt
                     }
-                }
+                ],
+                model=self.config.get("groq_model", "llama3-8b-8192"),
+                temperature=0.7,
+                max_tokens=512,
+                top_p=0.9,
+                stream=False
             )
-            response.raise_for_status()
-            result = response.json()
-            return result.get("response", "I couldn't generate an answer.")
+            
+            return chat_completion.choices[0].message.content
         except Exception as e:
             logger.error(f"Generation failed: {e}")
             return f"Error generating answer: {str(e)}"

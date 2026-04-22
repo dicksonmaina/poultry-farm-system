@@ -54,6 +54,7 @@ Welcome! I'm your local document assistant. I can answer questions based on docu
 /start - Show this welcome message
 /help - Show help information
 /status - Check system status
+/ask <question> - Ask a specific question about your documents
 /ingest - Re-ingest documents (admin)
 
 🔍 *Example questions:*
@@ -74,9 +75,9 @@ I use Retrieval-Augmented Generation (RAG) to answer questions from your local d
 
 *How it works:*
 1. Your documents are split into chunks
-2. Chunks are converted to vector embeddings using Ollama
+2. Chunks are converted to vector embeddings using sentence-transformers
 3. When you ask a question, I find the most relevant chunks
-4. I use Llama 3.1 to generate an answer based on those chunks
+4. I use Groq's Llama 3 to generate an answer based on those chunks
 
 *Supported file types:*
 - PDF (.pdf)
@@ -94,22 +95,18 @@ Need more help? Contact the system administrator.
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /status command"""
         try:
-            # Check Ollama
-            import requests
-            ollama_status = "✅ Connected" if self._check_ollama() else "❌ Disconnected"
-
             # Check documents count
             doc_count = self._get_document_count()
 
             status_msg = f"""
 🤖 *Bot Status*
 
-🔗 *Ollama:* {ollama_status}
 📄 *Documents in DB:* {doc_count}
-💾 *Storage:* {self.config.get('weaviate_data_path')}
+💾 *Storage:* {self.config.get('chromadb_data_path')}
 
-*Model:* {self.config.get('ollama_model')}
-*Vector DB:* Weaviate (embedded)
+*Embedding Model:* {self.config.get('embedding_model')}
+*LLM:* {self.config.get('groq_model')}
+*Vector DB:* ChromaDB (embedded)
 
 ✅ All systems operational!
 """
@@ -117,24 +114,11 @@ Need more help? Contact the system administrator.
         except Exception as e:
             await update.message.reply_text(f"❌ Status check failed: {str(e)}")
 
-    def _check_ollama(self) -> bool:
-        """Check if Ollama is available"""
-        try:
-            import requests
-            response = requests.get(f"{self.config.get('ollama_host')}/api/tags", timeout=2)
-            return response.status_code == 200
-        except:
-            return False
-
     def _get_document_count(self) -> int:
         """Get total document chunks in database"""
         try:
-            collection = self.ingester.client.collections.get(
-                self.config.get("collection_name")
-            )
-            # Simple count - in production use aggregate query
-            results = collection.query.fetch_objects(limit=1000)
-            return len(results.objects) if results.objects else 0
+            count = self.ingester.collection.count()
+            return count
         except:
             return 0
 
@@ -149,8 +133,37 @@ Need more help? Contact the system administrator.
         except Exception as e:
             await update.message.reply_text(f"❌ Ingestion failed: {str(e)}")
 
+    async def ask_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /ask command - answer a specific question"""
+        # Extract the question from the command
+        query = update.message.text.partition(' ')[2].strip()
+        
+        if not query:
+            await update.message.reply_text(
+                "Please provide a question after the /ask command.\n"
+                "Example: /ask What are the main topics discussed in the documents?"
+            )
+            return
+
+        # Show typing indicator
+        await update.message.chat.send_action(action="typing")
+
+        try:
+            # Process query through RAG
+            result = self.rag.query(query, top_k=3)
+
+            # Format response
+            response = self._format_response(result)
+            await update.message.reply_text(response, parse_mode='Markdown')
+
+        except Exception as e:
+            logger.error(f"Query processing failed: {e}")
+            await update.message.reply_text(
+                f"❌ Sorry, I encountered an error: {str(e)}\n\nPlease try again later."
+            )
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle incoming text messages"""
+        """Handle incoming text messages (backward compatibility)"""
         query = update.message.text.strip()
         user = update.effective_user
 
@@ -211,6 +224,7 @@ Need more help? Contact the system administrator.
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("status", self.status_command))
+        self.application.add_handler(CommandHandler("ask", self.ask_command))
         self.application.add_handler(CommandHandler("ingest", self.ingest_command))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 

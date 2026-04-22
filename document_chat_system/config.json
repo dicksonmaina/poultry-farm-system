@@ -1,16 +1,10 @@
-"""
-Configuration file for Document Chat System
-Edit these values to match your setup
-"""
-
 {
   "documents_path": "docs",
-  "weaviate_data_path": "data/weaviate",
-  "ollama_host": "http://localhost:11434",
-  "ollama_model": "llama3.1",
-  "telegram_token": "",
+  "chromadb_data_path": "data/chromadb",
+  "groq_api_key": "",
+  "groq_model": "llama3-8b-8192",
   "collection_name": "DocumentChunks",
   "chunk_size": 500,
   "chunk_overlap": 50,
-  "embedding_dim": 4096
+  "embedding_model": "all-MiniLM-L6-v2"
 }
