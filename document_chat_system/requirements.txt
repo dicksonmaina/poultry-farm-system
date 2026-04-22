@@ -1,0 +1,14 @@
+# Core dependencies
+python-telegram-bot>=20.0
+weaviate-client>=4.0.0
+requests>=2.31.0
+
+# Document processing
+pymupdf>=1.23.0  # For PDF reading
+
+# Utilities
+python-dotenv>=1.0.0  # For .env file support
+pathlib2>=2.3.0; python_version < '3.4'
+
+# Optional: enhanced performance
+# aiohttp>=3.9.0  # Async HTTP (if needed)
