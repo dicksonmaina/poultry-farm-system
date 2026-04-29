@@ -85,6 +85,118 @@ Capabilities you have:
 Always be helpful, accurate, and encouraging."""
 
 # ══════════════════════════════════════════════════════════════
+#  ML ROADMAP
+# ══════════════════════════════════════════════════════════════
+ML_ROADMAP = """
+Machine Learning Roadmap
+|
+|-- Fundamentals
+|   |-- Mathematics
+|   |   |-- Linear Algebra
+|   |   |-- Calculus (Gradients, Optimization)
+|   |   |-- Probability and Statistics
+|   |   |-- Matrix Operations
+|   |
+|   |-- Programming
+|   |   |-- Python (NumPy, Pandas, Scikit-learn)
+|   |   |-- R (Optional for Statistical Modeling)
+|   |   |-- SQL (For Data Extraction)
+|
+|-- Data Preprocessing
+|   |-- Data Cleaning
+|   |-- Feature Engineering
+|   |   |-- Encoding Categorical Data
+|   |   |-- Feature Scaling (Standardization, Normalization)
+|   |   |-- Handling Missing Values
+|   |-- Dimensionality Reduction (PCA, LDA)
+|
+|-- Supervised Learning
+|   |-- Regression
+|   |   |-- Linear Regression
+|   |   |-- Polynomial Regression
+|   |   |-- Ridge and Lasso Regression
+|   |-- Classification
+|   |   |-- Logistic Regression
+|   |   |-- Decision Trees
+|   |   |-- Support Vector Machines (SVM)
+|   |   |-- Ensemble Methods (Random Forest, Gradient Boosting, XGBoost)
+|
+|-- Unsupervised Learning
+|   |-- Clustering
+|   |   |-- K-Means
+|   |   |-- Hierarchical Clustering
+|   |   |-- DBSCAN
+|   |-- Dimensionality Reduction
+|   |   |-- Principal Component Analysis (PCA)
+|   |   |-- t-SNE
+|   |-- Association Rules (Apriori, FP-Growth)
+|
+|-- Reinforcement Learning
+|   |-- Markov Decision Processes
+|   |-- Q-Learning
+|   |-- Deep Q-Learning
+|   |-- Policy Gradient Methods
+|
+|-- Model Evaluation and Optimization
+|   |-- Train-Test Split and Cross-Validation
+|   |-- Performance Metrics
+|   |   |-- Accuracy, Precision, Recall, F1-Score
+|   |   |-- ROC-AUC
+|   |   |-- Mean Squared Error (MSE), R-squared
+|   |-- Hyperparameter Tuning
+|   |   |-- Grid Search
+|   |   |-- Random Search
+|   |   |-- Bayesian Optimization
+|
+|-- Deep Learning
+|   |-- Neural Networks
+|   |   |-- Perceptrons
+|   |   |-- Backpropagation
+|   |-- Convolutional Neural Networks (CNN)
+|   |   |-- Image Classification
+|   |   |-- Object Detection (YOLO, SSD)
+|   |-- Recurrent Neural Networks (RNN)
+|   |   |-- LSTM
+|   |   |-- GRU
+|   |-- Transformers (Attention Mechanisms, BERT, GPT)
+|   |-- Tools and Frameworks (TensorFlow, PyTorch)
+|
+|-- Advanced Topics
+|   |-- Transfer Learning
+|   |-- Generative Adversarial Networks (GANs)
+|   |-- Reinforcement Learning with Neural Networks
+|   |-- Explainable AI (SHAP, LIME)
+|
+|-- Applications of Machine Learning
+|   |-- Recommender Systems (Collaborative Filtering, Content-Based)
+|   |-- Fraud Detection
+|   |-- Sentiment Analysis
+|   |-- Predictive Maintenance
+|   |-- Autonomous Vehicles
+|
+|-- Deployment of Models
+|   |-- Flask, FastAPI
+|   |-- Cloud Deployment (AWS SageMaker, Azure ML)
+|   |-- Containerization (Docker, Kubernetes)
+|   |-- Model Monitoring and Retraining
+
+Best Resources to learn Machine Learning 👇👇
+
+Learn Python for Free
+Prompt Engineering Course
+Prompt Engineering Guide
+Data Science Course
+Google Cloud Generative AI Path
+Machine Learning with Python Free Course
+Machine Learning Free Book
+Deep Learning Nanodegree Program with Real-world Projects
+AI, Machine Learning and Deep Learning
+Join @free4unow_backup for more free courses
+
+ENJOY LEARNING👍👍
+"""
+
+# ══════════════════════════════════════════════════════════════
 #  CONVERSATION MEMORY
 # ══════════════════════════════════════════════════════════════
 conversation_history = {}
@@ -733,6 +845,9 @@ def process_message(message):
         handle_model(chat_id)
     elif text.startswith("/stats"):
         handle_stats(chat_id, user_name)
+
+    elif text == "/roadmap":
+        send_message(chat_id, f"📚 *Machine Learning Roadmap*\n\n{ML_ROADMAP}")
 
     elif text.lower().startswith("/pdf"):
         topic = text[4:].strip()
