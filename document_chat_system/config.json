@@ -1,0 +1,10 @@
+{
+  "documents_path": "docs",
+  "chromadb_data_path": "data/chromadb",
+  "groq_api_key": "",
+  "groq_model": "llama3-8b-8192",
+  "collection_name": "DocumentChunks",
+  "chunk_size": 500,
+  "chunk_overlap": 50,
+  "embedding_model": "all-MiniLM-L6-v2"
+}

@@ -1,0 +1,16 @@
+{
+  "id": "poultry-farm-2026",
+  "title": "Poultry Farm Management System",
+  "type": "diploma_project",
+  "date": "2026-04-21",
+  "status": "complete",
+  "url": "localhost:8080/poultry-farm/",
+  "login": "admin / admin123",
+  "database": "poultry_farm",
+  "tables": 14,
+  "modules": 12,
+  "connector": "localhost:5050",
+  "github": "dicksonmaina/poultry-farm-system",
+  "tech": ["PHP","MySQL","Tailwind CSS","XAMPP","JavaScript"],
+  "documentation": "Poultry_Farm_Management_System_Richard_Murimi_Maina.docx"
+}
