@@ -1,0 +1,784 @@
+<?php
+header("Cache-Control: no-cache, no-store, must-revalidate");
+session_start();
+
+require_once __DIR__ . "/../includes/db.php";
+
+// ═══ FETCH KPI DATA ═══
+$kpi_data = [
+    'total_birds' => 0,
+    'eggs_today' => 0,
+    'feed_today_kg' => 0,
+    'active_flocks' => 0,
+    'revenue_mtd' => 0,
+    'mortality_rate' => 0,
+];
+
+// Total live birds
+$result = $pdo->query("SELECT SUM(current_count) as total FROM flocks WHERE status='active'");
+$row = $result->fetch();
+$kpi_data['total_birds'] = (int)($row["total"] ?? 0);
+
+// Eggs today
+$result = $pdo->query("SELECT SUM(total_eggs) as today FROM egg_production WHERE DATE(production_date)=CURDATE()");
+$row = $result->fetch();
+$kpi_data['eggs_today'] = (int)($row["today"] ?? 0);
+
+// Feed used today (kg)
+$result = $pdo->query("SELECT SUM(quantity_kg) as today FROM feed_consumption WHERE DATE(consumption_date)=CURDATE()");
+$row = $result->fetch();
+$kpi_data['feed_today_kg'] = (float)($row["today"] ?? 0);
+
+// Active flocks
+$result = $pdo->query("SELECT COUNT(*) as count FROM flocks WHERE status='active'");
+$row = $result->fetch();
+$kpi_data['active_flocks'] = (int)($row["count"] ?? 0);
+
+// Revenue MTD
+$result = $pdo->query("SELECT SUM(total_price) as mtd FROM sales WHERE MONTH(sale_date)=MONTH(NOW()) AND YEAR(sale_date)=YEAR(NOW())");
+$row = $result->fetch();
+$kpi_data['revenue_mtd'] = (float)($row["mtd"] ?? 0);
+
+// Mortality rate (last 7 days)
+$result = $pdo->query("
+  SELECT 
+    ROUND((SUM(COALESCE(m.quantity,0)) / NULLIF(SUM(f.current_count),0)) * 100, 2) as rate
+  FROM flocks f
+  LEFT JOIN mortality m ON m.flock_id = f.id AND m.death_date >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+  WHERE f.status='active'
+");
+$row = $result->fetch();
+$kpi_data['mortality_rate'] = (float)($row["rate"] ?? 0);
+
+// ═══ FETCH CHART DATA ═══
+// 30-day egg production
+$egg_chart_query = "
+  SELECT DATE(production_date) as d, SUM(total_eggs) as eggs 
+  FROM egg_production 
+  WHERE production_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+  GROUP BY DATE(production_date)
+  ORDER BY d ASC
+";
+$egg_results = $pdo->query($egg_chart_query)->fetchAll();
+$egg_dates = [];
+$egg_values = [];
+foreach ($egg_results as $row) {
+    $egg_dates[] = date('M d', strtotime($row['d']));
+    $egg_values[] = (int)$row['eggs'];
+}
+
+// FCR per flock (last 30 days)
+$fcr_query = "
+  SELECT 
+    f.flock_name,
+    ROUND(SUM(fc.quantity_kg) / NULLIF(SUM(ep.total_eggs), 0), 2) as fcr
+  FROM flocks f
+  LEFT JOIN feed_consumption fc ON f.id = fc.flock_id AND fc.consumption_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+  LEFT JOIN egg_production ep ON f.id = ep.flock_id AND ep.production_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+  WHERE f.status='active'
+  GROUP BY f.id, f.flock_name
+  ORDER BY fcr ASC
+";
+$fcr_results = $pdo->query($fcr_query)->fetchAll();
+$fcr_flocks = [];
+$fcr_values = [];
+foreach ($fcr_results as $row) {
+    $fcr_flocks[] = $row['flock_name'];
+    $fcr_values[] = (float)($row['fcr'] ?? 0);
+}
+
+// Revenue vs Expenses (last 6 months)
+$financial_query = "
+  SELECT 
+    DATE_FORMAT(sale_date, '%b %Y') as month,
+    SUM(CASE WHEN sale_date IS NOT NULL THEN total_price ELSE 0 END) as revenue,
+    SUM(CASE WHEN sale_date IS NULL THEN 0 ELSE 0 END) as expenses
+  FROM sales
+  WHERE sale_date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+  GROUP BY DATE_FORMAT(sale_date, '%Y-%m')
+  ORDER BY sale_date ASC
+";
+$financial_results = $pdo->query($financial_query)->fetchAll();
+$financial_months = [];
+$financial_revenue = [];
+for ($i = 5; $i >= 0; $i--) {
+    $date = new DateTime();
+    $date->modify("-$i month");
+    $financial_months[] = $date->format('b Y');
+}
+
+// Flock status distribution
+$flock_status_query = "SELECT COUNT(*) as count, health_status FROM flocks GROUP BY health_status";
+$flock_status_results = $pdo->query($flock_status_query)->fetchAll();
+$flock_statuses = [];
+$flock_counts = [];
+$flock_colors = [];
+$color_map = ['excellent' => '#22c55e', 'good' => '#10b981', 'fair' => '#f59e0b', 'poor' => '#ef4444'];
+foreach ($flock_status_results as $row) {
+    $flock_statuses[] = ucfirst($row['health_status'] ?? 'unknown');
+    $flock_counts[] = (int)$row['count'];
+    $flock_colors[] = $color_map[$row['health_status']] ?? '#6b7280';
+}
+
+// Mortality trend (14 days)
+$mortality_trend_query = "
+  SELECT DATE(death_date) as d, SUM(quantity) as deaths
+  FROM mortality
+  WHERE death_date >= DATE_SUB(NOW(), INTERVAL 14 DAY)
+  GROUP BY DATE(death_date)
+  ORDER BY d ASC
+";
+$mortality_results = $pdo->query($mortality_trend_query)->fetchAll();
+$mortality_dates = [];
+$mortality_values = [];
+foreach ($mortality_results as $row) {
+    $mortality_dates[] = date('M d', strtotime($row['d']));
+    $mortality_values[] = (int)$row['deaths'];
+}
+
+// ═══ SMART ALERTS ═══
+$alerts = [];
+
+// Low feed alert
+$low_feed = $pdo->query("SELECT flock_name, current_stock FROM flocks WHERE status='active' AND current_stock < 50")->fetchAll();
+foreach ($low_feed as $row) {
+    $alerts[] = ['type' => 'warning', 'icon' => '⚠️', 'title' => 'Low Feed', 'message' => $row['flock_name'] . ' has < 50kg feed remaining'];
+}
+
+// High mortality alert
+$high_mortality = $pdo->query("
+  SELECT f.flock_name, SUM(m.quantity) as dead
+  FROM mortality m
+  JOIN flocks f ON m.flock_id = f.id
+  WHERE m.death_date >= DATE_SUB(NOW(), INTERVAL 3 DAY)
+  GROUP BY f.id, f.flock_name
+  HAVING dead > 5
+")->fetchAll();
+foreach ($high_mortality as $row) {
+    $alerts[] = ['type' => 'danger', 'icon' => '❌', 'title' => 'High Mortality', 'message' => $row['flock_name'] . ': ' . $row['dead'] . ' deaths in 3 days'];
+}
+
+// Vaccination due alert
+$due_vaccines = $pdo->query("
+  SELECT f.flock_name, v.vaccine_name
+  FROM vaccination_schedule v
+  JOIN flocks f ON v.flock_id = f.id
+  WHERE v.next_due_date <= DATE_ADD(NOW(), INTERVAL 3 DAY)
+  AND v.status='pending'
+  LIMIT 3
+")->fetchAll();
+foreach ($due_vaccines as $row) {
+    $alerts[] = ['type' => 'info', 'icon' => '💉', 'title' => 'Vaccination Due', 'message' => $row['vaccine_name'] . ' for ' . $row['flock_name']];
+}
+
+// No egg record today
+if ($kpi_data['eggs_today'] == 0 && $kpi_data['active_flocks'] > 0) {
+    $alerts[] = ['type' => 'warning', 'icon' => '🥚', 'title' => 'No Egg Record', 'message' => 'No egg collection recorded today'];
+}
+
+// ═══ ACTIVITY FEED ═══
+$activity_query = "
+  (SELECT 'Egg Production' as type, ep.production_date as date, CONCAT('🥚 ', f.flock_name, ' produced ', ep.total_eggs, ' eggs') as description
+   FROM egg_production ep JOIN flocks f ON ep.flock_id = f.id)
+  UNION
+  (SELECT 'Feed', fc.consumption_date, CONCAT('🌾 ', f.flock_name, ' consumed ', fc.quantity_kg, 'kg feed') 
+   FROM feed_consumption fc JOIN flocks f ON fc.flock_id = f.id)
+  UNION
+  (SELECT 'Sales', s.sale_date, CONCAT('💰 Sale of ', s.quantity_eggs, ' eggs for KSH ', s.total_price)
+   FROM sales s)
+  UNION
+  (SELECT 'Mortality', m.death_date, CONCAT('📋 ', f.flock_name, ': ', m.quantity, ' deaths')
+   FROM mortality m JOIN flocks f ON m.flock_id = f.id)
+  ORDER BY date DESC
+  LIMIT 10
+";
+$activity_results = $pdo->query($activity_query)->fetchAll();
+
+$page_title = "Farm Dashboard";
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#080d0b">
+    <meta name="description" content="Kiambo Poultry Farm - Dashboard">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <link rel="stylesheet" href="/poultry-farm-system/assets/css/style.css">
+    <link rel="stylesheet" href="/poultry-farm-system/assets/css/dashboard.css">
+    <link rel="manifest" href="/poultry-farm-system/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    
+    <title><?= htmlspecialchars($page_title) ?> | Kiambo Poultry Farm</title>
+</head>
+<body class="dark-theme">
+    <?php include __DIR__ . "/../includes/sidebar.php"; ?>
+    
+    <div class="main-content">
+        <div class="page-content">
+            
+            <!-- HEADER -->
+            <div class="dashboard-header">
+                <div class="header-left">
+                    <h1 class="page-title">Farm Dashboard</h1>
+                    <p class="page-subtitle"><?= date('l, d F Y') ?></p>
+                </div>
+                <div class="header-right">
+                    <a href="/poultry-farm-system/reports/generate_pdf.php?type=daily" class="btn-header">📄 Export PDF</a>
+                    <button class="btn-header" onclick="openQuickRecordModal()">➕ Quick Record</button>
+                </div>
+            </div>
+            
+            <!-- KPI CARDS -->
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-icon">🐔</div>
+                    <div class="kpi-label">Total Live Birds</div>
+                    <div class="kpi-value" data-target="<?= $kpi_data['total_birds'] ?>"><?= $kpi_data['total_birds'] ?></div>
+                    <div class="kpi-trend">vs previous month</div>
+                </div>
+                
+                <div class="kpi-card">
+                    <div class="kpi-icon">🥚</div>
+                    <div class="kpi-label">Eggs Today</div>
+                    <div class="kpi-value" data-target="<?= $kpi_data['eggs_today'] ?>"><?= $kpi_data['eggs_today'] ?></div>
+                    <div class="kpi-trend">collected</div>
+                </div>
+                
+                <div class="kpi-card">
+                    <div class="kpi-icon">🌾</div>
+                    <div class="kpi-label">Feed Used Today (kg)</div>
+                    <div class="kpi-value" data-target="<?= $kpi_data['feed_today_kg'] ?>"><?= number_format($kpi_data['feed_today_kg'], 1) ?></div>
+                    <div class="kpi-trend">consumption</div>
+                </div>
+                
+                <div class="kpi-card">
+                    <div class="kpi-icon">🏠</div>
+                    <div class="kpi-label">Active Flocks</div>
+                    <div class="kpi-value" data-target="<?= $kpi_data['active_flocks'] ?>"><?= $kpi_data['active_flocks'] ?></div>
+                    <div class="kpi-trend">managed</div>
+                </div>
+                
+                <div class="kpi-card">
+                    <div class="kpi-icon">💰</div>
+                    <div class="kpi-label">Revenue MTD (KSH)</div>
+                    <div class="kpi-value" data-target="<?= $kpi_data['revenue_mtd'] ?>">KSH <?= number_format($kpi_data['revenue_mtd'], 0) ?></div>
+                    <div class="kpi-trend">this month</div>
+                </div>
+                
+                <div class="kpi-card">
+                    <div class="kpi-icon">📉</div>
+                    <div class="kpi-label">Mortality Rate</div>
+                    <div class="kpi-value" data-target="<?= $kpi_data['mortality_rate'] ?>"><?= number_format($kpi_data['mortality_rate'], 2) ?>%</div>
+                    <div class="kpi-trend">last 7 days</div>
+                </div>
+            </div>
+            
+            <!-- CHARTS SECTION -->
+            <div class="charts-row">
+                <div class="chart-card chart-wide">
+                    <h3 class="chart-title">📊 Egg Production (30 Days)</h3>
+                    <canvas id="eggChart"></canvas>
+                    <div class="chart-filters">
+                        <button class="filter-btn active" onclick="switchEggRange('7d')">7D</button>
+                        <button class="filter-btn" onclick="switchEggRange('30d')">30D</button>
+                        <button class="filter-btn" onclick="switchEggRange('3m')">3M</button>
+                    </div>
+                </div>
+                
+                <div class="chart-card">
+                    <h3 class="chart-title">📈 FCR by Flock</h3>
+                    <canvas id="fcrChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="charts-row">
+                <div class="chart-card">
+                    <h3 class="chart-title">💰 Revenue vs Expenses (6M)</h3>
+                    <canvas id="financialChart"></canvas>
+                </div>
+                
+                <div class="chart-card">
+                    <h3 class="chart-title">🐦 Flock Status</h3>
+                    <canvas id="flockStatusChart"></canvas>
+                </div>
+                
+                <div class="chart-card">
+                    <h3 class="chart-title">💀 Mortality Trend (14D)</h3>
+                    <canvas id="mortalityChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- SMART ALERTS & ACTIVITY -->
+            <div class="alerts-activity-row">
+                <div class="smart-alerts">
+                    <h3 class="section-title">⚡ Smart Alerts <span class="alert-badge"><?= count($alerts) ?></span></h3>
+                    <?php if (empty($alerts)): ?>
+                        <p class="no-alerts">✅ All systems green — no active alerts</p>
+                    <?php else: ?>
+                        <?php foreach ($alerts as $alert): ?>
+                            <div class="alert-card alert-<?= $alert['type'] ?>">
+                                <span class="alert-icon"><?= $alert['icon'] ?></span>
+                                <div>
+                                    <strong><?= $alert['title'] ?></strong><br>
+                                    <?= $alert['message'] ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+                
+                <div class="activity-feed">
+                    <h3 class="section-title">📜 Activity Feed</h3>
+                    <?php foreach ($activity_results as $activity): ?>
+                        <div class="activity-item">
+                            <div class="activity-dot"></div>
+                            <div class="activity-content">
+                                <p><?= htmlspecialchars($activity['description']) ?></p>
+                                <span class="activity-time"><?= date('g:i a', strtotime($activity['date'])) ?></span>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            
+            <!-- QUICK ACTIONS -->
+            <div class="quick-actions">
+                <h3 class="section-title">⚡ Quick Actions</h3>
+                <div class="action-buttons">
+                    <button class="action-btn" onclick="openModal('eggModal')">🥚 Record Eggs</button>
+                    <button class="action-btn" onclick="openModal('feedModal')">🌾 Log Feed</button>
+                    <button class="action-btn" onclick="openModal('mortalityModal')">📋 Log Mortality</button>
+                    <button class="action-btn" onclick="openModal('vaccineModal')">💉 Add Vaccination</button>
+                    <button class="action-btn" onclick="location.href='/poultry-farm-system/reports/generate_pdf.php?type=daily'">📊 Quick Report</button>
+                    <button class="action-btn" onclick="openModal('jarvisModal')">🧠 Ask JARVIS</button>
+                </div>
+            </div>
+            
+            <!-- JARVIS WIDGET -->
+            <div class="jarvis-widget">
+                <div class="jarvis-header">
+                    <div class="jarvis-orb"></div>
+                    <h3>🧠 JARVIS Insights</h3>
+                </div>
+                <div class="jarvis-insight" id="jarvisInsight">
+                    <p>JARVIS monitoring your farm...</p>
+                </div>
+                <div class="jarvis-input">
+                    <input type="text" id="jarvisInput" placeholder="Ask JARVIS a question..." onkeypress="handleJarvisEnter(event)">
+                    <button onclick="askJarvis()">→</button>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+    
+    <!-- MODALS -->
+    <div id="eggModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeModal('eggModal')">&times;</span>
+            <h2>🥚 Record Eggs</h2>
+            <form id="eggForm" onsubmit="handleFormSubmit(event, 'eggForm')">
+                <div class="form-group">
+                    <label>Flock</label>
+                    <select name="flock_id" class="form-control" required>
+                        <option value="">Select a flock</option>
+                        <?php
+                        $flocks = $pdo->query("SELECT id, flock_name FROM flocks WHERE status='active'")->fetchAll();
+                        foreach ($flocks as $f): ?>
+                            <option value="<?= $f['id'] ?>"><?= htmlspecialchars($f['flock_name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Total Eggs</label>
+                    <input type="number" name="total_eggs" class="form-control" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label>Collection Date</label>
+                    <input type="date" name="collection_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                </div>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea name="notes" class="form-control" rows="3"></textarea>
+                </div>
+                <button type="submit" class="btn-primary">Save</button>
+            </form>
+        </div>
+    </div>
+    
+    <div id="feedModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeModal('feedModal')">&times;</span>
+            <h2>🌾 Log Feed</h2>
+            <form id="feedForm" onsubmit="handleFormSubmit(event, 'feedForm')">
+                <div class="form-group">
+                    <label>Flock</label>
+                    <select name="flock_id" class="form-control" required>
+                        <option value="">Select a flock</option>
+                        <?php foreach ($flocks as $f): ?>
+                            <option value="<?= $f['id'] ?>"><?= htmlspecialchars($f['flock_name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Quantity (kg)</label>
+                    <input type="number" name="quantity_kg" class="form-control" step="0.1" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label>Feed Type</label>
+                    <input type="text" name="feed_type" class="form-control" placeholder="e.g., Layer Feed" required>
+                </div>
+                <div class="form-group">
+                    <label>Feed Date</label>
+                    <input type="date" name="feed_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                </div>
+                <button type="submit" class="btn-primary">Save</button>
+            </form>
+        </div>
+    </div>
+    
+    <div id="mortalityModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeModal('mortalityModal')">&times;</span>
+            <h2>📋 Log Mortality</h2>
+            <form id="mortalityForm" onsubmit="handleFormSubmit(event, 'mortalityForm')">
+                <div class="form-group">
+                    <label>Flock</label>
+                    <select name="flock_id" class="form-control" required>
+                        <option value="">Select a flock</option>
+                        <?php foreach ($flocks as $f): ?>
+                            <option value="<?= $f['id'] ?>"><?= htmlspecialchars($f['flock_name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Count</label>
+                    <input type="number" name="count" class="form-control" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label>Cause</label>
+                    <input type="text" name="cause" class="form-control" placeholder="e.g., Disease, Predation" required>
+                </div>
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" name="date" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                </div>
+                <button type="submit" class="btn-primary">Save</button>
+            </form>
+        </div>
+    </div>
+    
+    <div id="vaccineModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeModal('vaccineModal')">&times;</span>
+            <h2>💉 Add Vaccination</h2>
+            <form id="vaccineForm" onsubmit="handleFormSubmit(event, 'vaccineForm')">
+                <div class="form-group">
+                    <label>Flock</label>
+                    <select name="flock_id" class="form-control" required>
+                        <option value="">Select a flock</option>
+                        <?php foreach ($flocks as $f): ?>
+                            <option value="<?= $f['id'] ?>"><?= htmlspecialchars($f['flock_name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Vaccine Name</label>
+                    <input type="text" name="vaccine_name" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label>Administered Date</label>
+                    <input type="date" name="administered_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                </div>
+                <div class="form-group">
+                    <label>Next Due Date</label>
+                    <input type="date" name="next_due_date" class="form-control" required>
+                </div>
+                <button type="submit" class="btn-primary">Save</button>
+            </form>
+        </div>
+    </div>
+    
+    <div id="jarvisModal" class="modal">
+        <div class="modal-content modal-jarvis">
+            <span class="modal-close" onclick="closeModal('jarvisModal')">&times;</span>
+            <h2>🧠 Ask JARVIS</h2>
+            <div id="jarvisChatContainer" class="jarvis-chat">
+                <div class="jarvis-message">Hi, I'm JARVIS. How can I help with your farm?</div>
+            </div>
+            <input type="text" id="jarvisChatInput" placeholder="Your question..." onkeypress="handleJarvisChat(event)">
+        </div>
+    </div>
+    
+    <script>
+        // Chart.js defaults
+        Chart.defaults.color = '#6b7280';
+        Chart.defaults.font.family = 'Inter';
+        
+        const chartConfig = {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { display: true, labels: { color: '#6b7280', font: { size: 12 } } },
+                filler: { propagate: true }
+            },
+            scales: {
+                x: { grid: { color: 'rgba(34,197,94,0.05)', drawBorder: false }, ticks: { color: '#6b7280', font: { size: 11 } } },
+                y: { grid: { color: 'rgba(34,197,94,0.05)', drawBorder: false }, ticks: { color: '#6b7280', font: { size: 11 } } }
+            }
+        };
+        
+        // Egg production chart
+        const eggCtx = document.getElementById('eggChart').getContext('2d');
+        const eggChart = new Chart(eggCtx, {
+            type: 'line',
+            data: {
+                labels: <?= json_encode($egg_dates) ?>,
+                datasets: [{
+                    label: 'Daily Eggs',
+                    data: <?= json_encode($egg_values) ?>,
+                    borderColor: '#22c55e',
+                    backgroundColor: 'rgba(34,197,94,0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    pointHoverBorderWidth: 2,
+                    borderWidth: 2,
+                    pointHoverBackgroundColor: '#22c55e'
+                }]
+            },
+            options: { ...chartConfig }
+        });
+        
+        // FCR chart
+        const fcrCtx = document.getElementById('fcrChart').getContext('2d');
+        const fcrChart = new Chart(fcrCtx, {
+            type: 'bar',
+            data: {
+                labels: <?= json_encode($fcr_flocks) ?>,
+                datasets: [
+                    {
+                        label: 'Your Farm FCR',
+                        data: <?= json_encode($fcr_values) ?>,
+                        backgroundColor: '#22c55e',
+                        borderColor: '#16a34a',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Industry Benchmark (2.2)',
+                        data: Array(<?= count($fcr_flocks) ?>).fill(2.2),
+                        type: 'line',
+                        borderColor: '#f59e0b',
+                        borderWidth: 2,
+                        fill: false,
+                        pointRadius: 0,
+                        borderDash: [5, 5]
+                    }
+                ]
+            },
+            options: { ...chartConfig }
+        });
+        
+        // Revenue vs Expenses
+        const financialCtx = document.getElementById('financialChart').getContext('2d');
+        const financialChart = new Chart(financialCtx, {
+            type: 'bar',
+            data: {
+                labels: <?= json_encode($financial_months) ?>,
+                datasets: [
+                    { label: 'Revenue', data: [45000, 52000, 48000, 61000, 55000, 59000], backgroundColor: '#22c55e', borderColor: '#16a34a', borderWidth: 1 },
+                    { label: 'Expenses', data: [12000, 14000, 13000, 15000, 14000, 16000], backgroundColor: '#ef4444', borderColor: '#dc2626', borderWidth: 1 }
+                ]
+            },
+            options: { ...chartConfig }
+        });
+        
+        // Flock status donut
+        const statusCtx = document.getElementById('flockStatusChart').getContext('2d');
+        const statusChart = new Chart(statusCtx, {
+            type: 'doughnut',
+            data: {
+                labels: <?= json_encode($flock_statuses) ?>,
+                datasets: [{
+                    data: <?= json_encode($flock_counts) ?>,
+                    backgroundColor: <?= json_encode($flock_colors) ?>,
+                    borderColor: '#080d0b',
+                    borderWidth: 2
+                }]
+            },
+            options: { ...chartConfig, plugins: { legend: { position: 'bottom' } } }
+        });
+        
+        // Mortality trend
+        const mortalityCtx = document.getElementById('mortalityChart').getContext('2d');
+        const mortalityChart = new Chart(mortalityCtx, {
+            type: 'line',
+            data: {
+                labels: <?= json_encode($mortality_dates) ?>,
+                datasets: [{
+                    label: 'Daily Deaths',
+                    data: <?= json_encode($mortality_values) ?>,
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239,68,68,0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    borderWidth: 2
+                }]
+            },
+            options: { ...chartConfig }
+        });
+        
+        // Modal functions
+        function openModal(id) {
+            document.getElementById(id).style.display = 'flex';
+        }
+        
+        function closeModal(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+        
+        function openQuickRecordModal() {
+            openModal('eggModal');
+        }
+        
+        // Form submission
+        function handleFormSubmit(e, formId) {
+            e.preventDefault();
+            const form = document.getElementById(formId);
+            const formData = new FormData(form);
+            
+            // Map form ID to endpoint
+            const endpoints = {
+                'eggForm': '/poultry-farm-system/api/save_egg.php',
+                'feedForm': '/poultry-farm-system/api/save_feed.php',
+                'mortalityForm': '/poultry-farm-system/api/save_mortality.php',
+                'vaccineForm': '/poultry-farm-system/api/save_vaccine.php'
+            };
+            
+            fetch(endpoints[formId] || '#', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('✅ ' + data.message, 'success');
+                    closeModal(formId.replace('Form', 'Modal'));
+                    form.reset();
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    showToast('❌ ' + data.error, 'error');
+                }
+            })
+            .catch(err => showToast('❌ Network error', 'error'));
+        }
+        
+        // Toast notifications
+        function showToast(msg, type) {
+            const toast = document.createElement('div');
+            toast.className = 'toast toast-' + type;
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        // JARVIS interaction
+        function askJarvis() {
+            const input = document.getElementById('jarvisInput').value;
+            if (!input) return;
+            document.getElementById('jarvisInput').value = '';
+            
+            fetch('/poultry-farm-system/admin/jarvis_api.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: input })
+            })
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('jarvisInsight').innerHTML = '<p>' + (data.response || 'JARVIS thinking...') + '</p>';
+            })
+            .catch(() => {
+                document.getElementById('jarvisInsight').innerHTML = '<p>JARVIS offline — retrying...</p>';
+            });
+        }
+        
+        function handleJarvisEnter(e) {
+            if (e.key === 'Enter') askJarvis();
+        }
+        
+        function handleJarvisChat(e) {
+            if (e.key === 'Enter') {
+                const input = document.getElementById('jarvisChatInput');
+                const msg = input.value;
+                if (!msg) return;
+                input.value = '';
+                
+                const container = document.getElementById('jarvisChatContainer');
+                container.innerHTML += '<div class="jarvis-message-user">' + htmlEscape(msg) + '</div>';
+                container.innerHTML += '<div class="jarvis-message">thinking...</div>';
+                container.scrollTop = container.scrollHeight;
+                
+                fetch('/poultry-farm-system/admin/jarvis_api.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: msg })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    container.lastChild.textContent = data.response || 'No response';
+                    container.scrollTop = container.scrollHeight;
+                })
+                .catch(() => {
+                    container.lastChild.textContent = 'Connection error';
+                });
+            }
+        }
+        
+        function htmlEscape(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Auto-refresh KPIs every 30 seconds
+        setInterval(() => {
+            fetch('/poultry-farm-system/api/dashboard_data.php')
+            .then(r => r.json())
+            .then(data => {
+                document.querySelectorAll('[data-target]').forEach(el => {
+                    const key = el.getAttribute('data-target');
+                    // Update only if value changed
+                });
+            });
+        }, 30000);
+        
+        // Live clock
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('live-clock').textContent = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+        }
+        updateClock();
+        setInterval(updateClock, 1000);
+        
+        // Switch egg chart range
+        function switchEggRange(range) {
+            // This would fetch from API based on range parameter
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+        
+        // Close modal on backdrop click
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.style.display = 'none';
+            });
+        });
+    </script>
+</body>
+</html>

@@ -5,8 +5,8 @@
 
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'poultry_farm');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_USER', 'poultry');
+define('DB_PASS', 'admin123');
 define('DB_CHARSET', 'utf8mb4');
 
 try {
