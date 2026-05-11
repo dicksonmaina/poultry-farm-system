@@ -1,128 +1,121 @@
-<?php
-/**
- * Poultry Farm System - Main Entry Point
- */
-
-session_start();
-
-require_once 'config.php';
-
-$page = $_GET['page'] ?? 'dashboard';
-
-// Redirect to login if not logged in
-if (!isset($_SESSION['user_id']) && $page !== 'login') {
-    header('Location: index.php?page=login');
-    exit;
-}
-
-$pages = [
-    'dashboard' => 'pages/dashboard.php',
-    'flocks' => 'pages/flocks.php',
-    'birds' => 'pages/birds.php',
-    'eggs' => 'pages/eggs.php',
-    'feed' => 'pages/feed.php',
-    'vaccines' => 'pages/vaccines.php',
-    'mortality' => 'pages/mortality.php',
-    'weight' => 'pages/weight.php',
-    'finance' => 'pages/finance.php',
-    'sales' => 'pages/sales.php',
-    'reports' => 'pages/reports.php',
-    'settings' => 'pages/settings.php',
-    'login' => 'pages/login.php',
-    'logout' => 'pages/logout.php'
-];
-?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Poultry Farm Management System</title>
+    <title>Poultry Farm System - Login</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        farm: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            200: '#bbf7d0',
+                            300: '#86efac',
+                            400: '#4ade80',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            900: '#14532d',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
     <style>
-        :root {
-            --bg-dark: #0a0f0d;
-            --card-bg: #162019;
-            --green-accent: #3ddc6e;
-        }
-        body {
-            background-color: var(--bg-dark);
-        }
-        .sidebar {
-            background-color: #0d1a12;
-            border-right: 1px solid #1f2d25;
-        }
-        .nav-item {
-            color: #9ca3af;
-        }
-        .nav-item:hover, .nav-item.active {
-            background-color: #1a2a1f;
-            color: var(--green-accent);
+        .chicken-pattern {
+            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%2316a34a' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
         }
     </style>
 </head>
-<body>
-    <div class="min-h-screen flex" style="background-color: var(--bg-dark)">
-        <?php if (isset($_SESSION['user_id'])): ?>
-        <aside class="w-64 sidebar text-white flex-shrink-0 fixed h-full">
-            <div class="p-4 border-b border-gray-800">
-                <h1 class="text-xl font-bold"><i class="fas fa-drumstick-bite" style="color: var(--green-accent)"></i> Poultry Farm</h1>
+<body class="bg-farm-50 min-h-screen flex items-center justify-center chicken-pattern">
+
+    <div class="w-full max-w-md">
+        <!-- Logo & Title -->
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-20 h-20 bg-farm-600 rounded-full shadow-lg mb-4">
+                <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.834 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                </svg>
             </div>
-            <nav class="mt-4">
-                <a href="?page=dashboard" class="nav-item block px-4 py-2 hover:bg-green-700/20 <?= $page=='dashboard'?'active':'' ?>">
-                    <i class="fas fa-home w-6"></i> Dashboard
-                </a>
-                <a href="?page=flocks" class="nav-item block px-4 py-2 hover:bg-green-700/20 <?= $page=='flocks'?'active':'' ?>">
-                    <i class="fas fa-feather-alt w-6"></i> Flocks
-                </a>
-                <a href="?page=birds" class="nav-item block px-4 py-2 hover:bg-green-700/20 <?= $page=='birds'?'active':'' ?>">
-                    <i class="fas fa-crow w-6"></i> Birds
-                </a>
-                <a href="?page=eggs" class="nav-item block px-4 py-2 hover:bg-green-700/20 <?= $page=='eggs'?'active':'' ?>">
-                    <i class="fas fa-egg w-6"></i> Egg Production
-                </a>
-                <a href="?page=feed" class="nav-item block px-4 py-2 hover:bg-green-700/20 <?= $page=='feed'?'active':'' ?>">
-                    <i class="fas fa-seedling w-6"></i> Feed
-                </a>
-                <a href="?page=vaccines" class="nav-item block px-4 py-2 hover:bg-green-700/20 <?= $page=='vaccines'?'active':'' ?>">
-                    <i class="fas fa-syringe w-6"></i> Vaccinations
-                </a>
-                <a href="?page=mortality" class="nav-item block px-4 py-2 hover:bg-green-700/20 <?= $page=='mortality'?'active':'' ?>">
-                    <i class="fas fa-skull w-6"></i> Mortality
-                </a>
-                <a href="?page=weight" class="nav-item block px-4 py-2 hover:bg-green-700/20 <?= $page=='weight'?'active':'' ?>">
-                    <i class="fas fa-weight w-6"></i> Weight Records
-                </a>
-                <a href="?page=finance" class="nav-item block px-4 py-2 hover:bg-green-700/20 <?= $page=='finance'?'active':'' ?>">
-                    <i class="fas fa-money-bill w-6"></i> Finance
-                </a>
-                <a href="?page=sales" class="nav-item block px-4 py-2 hover:bg-green-700/20 <?= $page=='sales'?'active':'' ?>">
-                    <i class="fas fa-shopping-cart w-6"></i> Sales
-                </a>
-                <a href="?page=reports" class="nav-item block px-4 py-2 hover:bg-green-700/20 <?= $page=='reports'?'active':'' ?>">
-                    <i class="fas fa-chart-bar w-6"></i> Reports
-                </a>
-                <a href="?page=settings" class="nav-item block px-4 py-2 hover:bg-green-700/20 <?= $page=='settings'?'active':'' ?>">
-                    <i class="fas fa-cog w-6"></i> Settings
-                </a>
-                <a href="?page=logout" class="nav-item block px-4 py-2 hover:bg-green-700/20 mt-4 border-t border-gray-800">
-                    <i class="fas fa-sign-out-alt w-6"></i> Logout
-                </a>
-            </nav>
-        </aside>
-        <?php endif; ?>
-        
-        <main class="flex-1 p-6 <?= isset($_SESSION['user_id']) ? 'ml-64' : '' ?>">
-            <?php
-            if (isset($pages[$page]) && file_exists($pages[$page])) {
-                require_once $pages[$page];
-            } else {
-                require_once 'pages/dashboard.php';
-            }
-            ?>
-        </main>
+            <h1 class="text-3xl font-bold text-farm-900">Poultry Farm</h1>
+            <p class="text-farm-600 mt-1">Management System</p>
+        </div>
+
+        <!-- Login Card -->
+        <div class="bg-white rounded-2xl shadow-xl p-8 border border-farm-100">
+            <h2 class="text-xl font-semibold text-gray-800 mb-6">Welcome Back</h2>
+            
+            <form action="#" method="POST" class="space-y-5">
+                <!-- Username -->
+                <div>
+                    <label for="username" class="block text-sm font-medium text-gray-700 mb-2">Username</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg class="h-5 w-5 text-farm-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                            </svg>
+                        </div>
+                        <input type="text" id="username" name="username" 
+                            class="block w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500 transition-colors"
+                            placeholder="Enter your username" required>
+                    </div>
+                </div>
+
+                <!-- Password -->
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg class="h-5 w-5 text-farm-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                            </svg>
+                        </div>
+                        <input type="password" id="password" name="password" 
+                            class="block w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-farm-500 focus:border-farm-500 transition-colors"
+                            placeholder="Enter your password" required>
+                    </div>
+                </div>
+
+                <!-- Remember Me & Forgot -->
+                <div class="flex items-center justify-between">
+                    <label class="flex items-center">
+                        <input type="checkbox" name="remember" 
+                            class="w-4 h-4 text-farm-600 border-gray-300 rounded focus:ring-farm-500">
+                        <span class="ml-2 text-sm text-gray-600">Remember me</span>
+                    </label>
+                    <a href="#" class="text-sm text-farm-600 hover:text-farm-700 hover:underline">Forgot password?</a>
+                </div>
+
+                <!-- Login Button -->
+                <button type="submit" 
+                    class="w-full bg-farm-600 hover:bg-farm-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center">
+                    <span>Sign In</span>
+                    <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+                    </svg>
+                </button>
+            </form>
+
+            <!-- Demo Hint -->
+            <div class="mt-6 pt-6 border-t border-gray-100 text-center">
+                <p class="text-sm text-gray-500">Demo: admin / admin123</p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center mt-8">
+            <p class="text-sm text-farm-600">
+                &copy; 2026 Poultry Farm Management System<br>
+                Richard Dickson | NIBS Technical College
+            </p>
+        </div>
     </div>
+
 </body>
 </html>
