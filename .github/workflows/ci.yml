@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+      - name: PHP Lint
+        run: |
+          find . -name '*.php' -not -path './vendor/*' -exec php -l {} \;
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for secrets
+        run: |
+          if grep -r -E "(password|secret|key|token)\s*=\s*['\"][^'\"]{8,}['\"]" --include='*.php' --include='*.js' --include='*.py' .; then
+            echo "::warning::Potential secrets found in code"
+          fi
