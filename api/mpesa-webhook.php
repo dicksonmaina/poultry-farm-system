@@ -4,9 +4,11 @@
  *
  * Flow:
  * - Receive STK Push callback from Safaricom Daraja
- * - Validate payment metadata
- * - Update tenant subscription state
- * - Record payment and audit log
+ * - Look up pending payment by checkout_request_id
+ * - Update payment status and subscription state
+ * - Record audit log
+ *
+ * This replaces the broken farm_id-from-query-param pattern.
  */
 
 require_once __DIR__ . '/../config/tenant-api-bootstrap.php';
@@ -21,7 +23,6 @@ if (!$input) {
     exit;
 }
 
-// Minimal validation of Daraja callback structure
 $body = $input['Body'] ?? [];
 $stkCallback = $body['stkCallback'] ?? [];
 $merchantRequestId = $stkCallback['MerchantRequestID'] ?? null;
@@ -48,74 +49,131 @@ foreach ($items as $item) {
     }
 }
 
+if (!$checkoutRequestId) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Missing checkout request ID']);
+    exit;
+}
+
+$tenantApp = new TenantApiBootstrap();
+
+// Look up pending payment by checkout_request_id across all tenants
+// In production, add an index on payments.reference for faster lookup
+$mainDb = $tenantApp->getMainConnection();
+$stmt = $mainDb->prepare('
+    SELECT id, farm_id, amount, method, status, metadata
+    FROM payments
+    WHERE reference = :reference
+    ORDER BY id DESC
+    LIMIT 1
+');
+$stmt->execute(['reference' => $checkoutRequestId]);
+$payment = $stmt->fetch();
+
+if (!$payment) {
+    http_response_code(404);
+    echo json_encode(['error' => 'Payment not found', 'checkout_request_id' => $checkoutRequestId]);
+    exit;
+}
+
+$farmId = (int) $payment['farm_id'];
+$connection = $tenantApp->getTenantConnection($farmId);
+
 if ($resultCode !== 0) {
+    // Mark payment as failed if still pending
+    if ($payment['status'] === 'pending') {
+        $update = $connection->prepare('
+            UPDATE payments
+            SET status = :status, metadata = :metadata
+            WHERE id = :id
+        ');
+        $update->execute([
+            'status' => 'failed',
+            'metadata' => json_encode([
+                'checkout_request_id' => $checkoutRequestId,
+                'merchant_request_id' => $merchantRequestId,
+                'result_code' => $resultCode,
+                'result_desc' => $resultDesc,
+            ]),
+            'id' => $payment['id'],
+        ]);
+    }
+
     http_response_code(200);
     echo json_encode([
         'status' => 'failed',
+        'payment_id' => $payment['id'],
+        'farm_id' => $farmId,
         'result_code' => $resultCode,
         'result_desc' => $resultDesc,
     ]);
     exit;
 }
 
-if (!$amount || !$checkoutRequestId) {
+if (!$amount) {
     http_response_code(400);
-    echo json_encode(['error' => 'Missing amount or checkout request ID']);
+    echo json_encode(['error' => 'Missing amount in callback metadata']);
     exit;
 }
 
-// Map checkout request ID back to farm/subscription context
-// In production, store checkout_request_id -> farm_id mapping before initiating STK Push
-$farmId = $_REQUEST['farm_id'] ?? null;
-
-if (!$farmId) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Missing farm context']);
+// Idempotency: do not double-credit a paid payment
+if ($payment['status'] === 'paid') {
+    http_response_code(200);
+    echo json_encode([
+        'status' => 'already_paid',
+        'payment_id' => $payment['id'],
+        'farm_id' => $farmId,
+        'amount' => (float) $payment['amount'],
+    ]);
     exit;
 }
-
-$tenantApp = new TenantApiBootstrap();
-$connection = $tenantApp->getTenantConnection((int) $farmId);
-
-$connection->exec('USE `' . getenv('DB_NAME') . '`');
 
 try {
+    $connection->beginTransaction();
+
     $stmt = $connection->prepare('
-        INSERT INTO payments (farm_id, amount, method, reference, status, paid_at, metadata)
-        VALUES (:farm_id, :amount, :method, :reference, :status, NOW(), :metadata)
+        UPDATE payments
+        SET status = :status,
+            paid_at = NOW(),
+            reference = :reference,
+            metadata = :metadata
+        WHERE id = :id
     ');
     $stmt->execute([
-        'farm_id' => (int) $farmId,
-        'amount' => (float) $amount,
-        'method' => 'mpesa',
-        'reference' => $receipt ?: $checkoutRequestId,
         'status' => 'paid',
+        'reference' => $receipt ?: $checkoutRequestId,
         'metadata' => json_encode([
             'checkout_request_id' => $checkoutRequestId,
             'merchant_request_id' => $merchantRequestId,
             'phone' => $phone,
+            'receipt' => $receipt,
             'result_desc' => $resultDesc,
         ]),
+        'id' => $payment['id'],
     ]);
 
-    $paymentId = (int) $connection->lastInsertId();
-
-    $tenantApp->logAudit('payment_received', null, 'payment', $paymentId, [
-        'farm_id' => (int) $farmId,
+    $tenantApp->logAudit('payment_received', null, 'payment', (int) $payment['id'], [
+        'farm_id' => $farmId,
         'amount' => (float) $amount,
         'receipt' => $receipt,
         'checkout_request_id' => $checkoutRequestId,
     ]);
 
+    $connection->commit();
+
     http_response_code(200);
     echo json_encode([
         'status' => 'success',
-        'payment_id' => $paymentId,
-        'farm_id' => (int) $farmId,
+        'payment_id' => (int) $payment['id'],
+        'farm_id' => $farmId,
         'amount' => (float) $amount,
     ]);
     exit;
 } catch (Throwable $e) {
+    if ($connection->inTransaction()) {
+        $connection->rollBack();
+    }
+
     http_response_code(500);
     echo json_encode([
         'error' => 'Server error',
