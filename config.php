@@ -1,12 +1,21 @@
 <?php
 /**
  * Database Configuration - Poultry Farm System
+ * Loads from .env when available; falls back to local defaults.
  */
 
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'poultry_farm');
-define('DB_USER', 'poultry');
-define('DB_PASS', 'admin123');
+function env_value(string $key, string $default = '') {
+    $value = getenv($key);
+    if ($value === false || $value === '') {
+        return $default;
+    }
+    return $value;
+}
+
+define('DB_HOST', env_value('DB_HOST', 'localhost'));
+define('DB_NAME', env_value('DB_NAME', 'poultry_farm'));
+define('DB_USER', env_value('DB_USER', 'poultry'));
+define('DB_PASS', env_value('DB_PASS', ''));
 define('DB_CHARSET', 'utf8mb4');
 
 try {
@@ -20,7 +29,7 @@ try {
             PDO::ATTR_EMULATE_PREPARES => false
         ]
     );
-} catch (PDOException $e) {
+} catch(PDOException $e) {
     die("Database connection failed: " . $e->getMessage());
 }
 

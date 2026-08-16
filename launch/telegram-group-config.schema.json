@@ -1,0 +1,126 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Telegram Group Operations Config",
+  "type": "object",
+  "required": ["group_id", "group_name", "owner_id", "bot_username", "created_at"],
+  "properties": {
+    "group_id": {
+      "type": "string",
+      "description": "Telegram group ID or @username"
+    },
+    "group_name": {
+      "type": "string",
+      "description": "Human-readable group name"
+    },
+    "owner_id": {
+      "type": "integer",
+      "description": "Telegram user ID of Richard"
+    },
+    "bot_username": {
+      "type": "string",
+      "description": "Bot username without @"
+    },
+    "purpose": {
+      "type": "string",
+      "enum": ["pilot_recruitment", "support", "community", "mixed"],
+      "default": "mixed"
+    },
+    "language": {
+      "type": "string",
+      "enum": ["en", "sw", "mixed"],
+      "default": "mixed"
+    },
+    "welcome": {
+      "type": "object",
+      "required": ["enabled", "template_id"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "template_id": {"type": "string"},
+        "delay_seconds": {"type": "integer", "minimum": 0, "maximum": 60}
+      }
+    },
+    "lead_capture": {
+      "type": "object",
+      "required": ["enabled", "actions"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label", "callback"],
+            "properties": {
+              "label": {"type": "string"},
+              "callback": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "support_keywords": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": ["support", "help", "ticket", "issue"]
+    },
+    "digest": {
+      "type": "object",
+      "required": ["enabled", "schedule"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "schedule": {
+          "type": "object",
+          "required": ["cron", "tz"],
+          "properties": {
+            "cron": {"type": "string"},
+            "tz": {"type": "string"}
+          }
+        },
+        "max_items": {"type": "integer", "minimum": 1, "maximum": 10, "default": 3}
+      }
+    },
+    "polls": {
+      "type": "object",
+      "required": ["enabled", "schedule"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "schedule": {
+          "type": "object",
+          "required": ["cron", "tz"],
+          "properties": {
+            "cron": {"type": "string"},
+            "tz": {"type": "string"}
+          }
+        }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "required": ["enabled", "inactive_days"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "inactive_days": {"type": "integer", "minimum": 7, "maximum": 90},
+        "dry_run": {"type": "boolean", "default": true}
+      }
+    },
+    "admin_ids": {
+      "type": "array",
+      "items": {"type": "integer"},
+      "description": "Telegram user IDs allowed to control the bot in this group"
+    },
+    "community_rules": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1
+    },
+    "revenue": {
+      "type": "object",
+      "properties": {
+        "support_endpoint": {"type": "string"},
+        "lead_tag": {"type": "string"},
+        "admin_panel_url": {"type": "string"}
+      }
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"}
+  }
+}

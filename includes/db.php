@@ -1,12 +1,28 @@
 <?php
-$host = 'localhost';
-$dbname = 'poultry_farm';
-$user = 'farmuser';
-$pass = 'farm2026';
-try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname", $user, $pass);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-} catch(PDOException $e) {
-    die('DB Error: ' . $e->getMessage());
+/**
+ * Database Access - Poultry Farm System
+ * Uses env-based config from config.php
+ */
+
+require_once __DIR__ . '/config.php';
+
+function getDB() {
+    static $pdo;
+    if ($pdo === null) {
+        try {
+            $pdo = new PDO(
+                "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET,
+                DB_USER,
+                DB_PASS,
+                [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false
+                ]
+            );
+        } catch(PDOException $e) {
+            die("Database connection failed: " . $e->getMessage());
+        }
+    }
+    return $pdo;
 }
-?>

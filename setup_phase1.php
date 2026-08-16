@@ -2,16 +2,19 @@
 /**
  * KILO CODE PHASE 1: Database Schema Upgrade
  * Executes all ALTER TABLE and CREATE TABLE statements
- * Password protected with: 39019127
+ * This endpoint should be protected behind authenticated admin access.
  */
 
-// Security check
-if (!isset($_GET['pass']) || $_GET['pass'] !== '39019127') {
-    http_response_code(403);
-    die("Access Denied: Invalid password");
+require_once __DIR__ . '/config.php';
+
+function require_admin() {
+    if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
+        http_response_code(403);
+        die('Admin access required');
+    }
 }
 
-require_once __DIR__ . '/includes/db.php';
+require_admin();
 
 header('Content-Type: application/json');
 

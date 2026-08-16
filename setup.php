@@ -4,17 +4,14 @@
  * Creates all 14 tables for 8 modules
  */
 
-$host = 'localhost';
-$user = 'root';
-$pass = '';
-$dbname = 'poultry_farm';
+require_once __DIR__ . '/config.php';
+$pdo = getDB();
 
 try {
-    $pdo = new PDO("mysql:host=$host", $user, $pass);
-    $pdo->exec("CREATE DATABASE IF NOT EXISTS $dbname CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    echo "Database '$dbname' created/verified.\n";
+    $pdo->exec("CREATE DATABASE IF NOT EXISTS " . DB_NAME . " CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    echo "Database '" . DB_NAME . "' created/verified.\n";
     
-    $pdo->exec("USE $dbname");
+    $pdo->exec("USE " . DB_NAME);
     
     $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
     

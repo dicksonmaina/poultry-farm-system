@@ -37,7 +37,8 @@
         </div>
         <div class="nav-section">
             <div class="nav-label">Intelligence</div>
-            <div class="nav-item jarvis-link"><span class="nav-icon">🧠</span> JARVIS AI</div>
+            <div class="nav-item"><span class="nav-icon">🧠</span> JARVIS AI</div>
+            <div class="nav-item"><span class="nav-icon">🎧</span> Support</div>
             <div class="nav-item"><span class="nav-icon">⚙️</span> Settings</div>
         </div>
     </nav>

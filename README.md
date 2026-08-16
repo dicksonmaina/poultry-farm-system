@@ -13,6 +13,7 @@ If you run a poultry farm, this replaces scattered spreadsheets and manual logs 
 - **Finance** — expenses, income, profitability
 - **Client portal** — order placement, tracking, history
 - **Users & roles** — admin, farm manager, staff
+- **Support** — in-app support and subscription requests
 
 ## Tech stack
 
@@ -26,31 +27,26 @@ If you run a poultry farm, this replaces scattered spreadsheets and manual logs 
 ```bash
 git clone https://github.com/dicksonmaina/poultry-farm-system.git
 cd poultry-farm-system
-# Import database schema from seed.php / db_update.php
-# Configure database credentials in config.php
-# Serve with Apache or PHP built-in server
+cp .env.example .env
+# Edit .env with your DB credentials
+# Import database schema from database/support_requests.sql and seed.php/setup.php
 php -S localhost:8000
 ```
 
 ## Setup
 
 1. Clone the repo
-2. Create a MySQL database
-3. Run `seed.php` or `db_update.php` to initialize schema
-4. Edit `config.php` with your DB credentials
-5. Access via browser and create admin user via `setup.php`
+2. Copy `.env.example` to `.env` and update credentials
+3. Create a MySQL database
+4. Import schema and seed data
+5. Serve with Apache or PHP built-in server
+6. Access via browser and create admin user via `setup.php`
 
-## Roadmap
+## Support
 
-- Local installation and self-hosting (current)
-- Cloud-hosted version with managed updates
-- Mobile app for field staff
-- Integration with feed suppliers and payment gateways
+Use the in-app **Support** page to request setup help, custom modules, or an ongoing support subscription.
 
-## Paid support & customization
-
-This project is open source. If you need help deploying it, customizing modules, or training staff, reach out. Typical engagements:
-
+Typical engagements:
 - Installation and setup: from $50
 - Custom module development: from $100
 - Ongoing support: from $20/month

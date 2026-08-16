@@ -104,7 +104,7 @@
 
             <!-- Demo Hint -->
             <div class="mt-6 pt-6 border-t border-gray-100 text-center">
-                <p class="text-sm text-gray-500">Demo: admin / admin123</p>
+                <p class="text-sm text-gray-500">Use your farm account to sign in.</p>
             </div>
         </div>
 
