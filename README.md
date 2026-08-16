@@ -40,6 +40,23 @@ php -S localhost:8000
 4. Edit `config.php` with your DB credentials
 5. Access via browser and create admin user via `setup.php`
 
+## Roadmap
+
+- Local installation and self-hosting (current)
+- Cloud-hosted version with managed updates
+- Mobile app for field staff
+- Integration with feed suppliers and payment gateways
+
+## Paid support & customization
+
+This project is open source. If you need help deploying it, customizing modules, or training staff, reach out. Typical engagements:
+
+- Installation and setup: from $50
+- Custom module development: from $100
+- Ongoing support: from $20/month
+
+Contact: Richard Dickson Maina
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md)
