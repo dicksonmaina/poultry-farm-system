@@ -244,6 +244,13 @@ if ($message && isset($message['text'])) {
         }
 
         if (!$matched) {
+            $lowerText = strtolower($text);
+            $isCommand = str_starts_with($lowerText, '/');
+            $isMention = str_contains($lowerText, '@rixikibot') || str_contains($text, '@Rixikibot');
+            if (!$isCommand && !$isMention) {
+                return;
+            }
+
             tgSend($apiBase, [
                 'chat_id' => $chatId,
                 'text' => "👋 I didn't catch that. Try /demo, /signup, /support, or /price.",
