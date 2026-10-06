@@ -1,34 +1,44 @@
-# Dependencies
-/vendor/
-/node_modules/
-/composer.lock
-/package-lock.json
-
-# Environment
-.env
-.env.local
-.env.*.local
-/config.php
-/cred.in
-
-# Database
-*.sql
-*.db
-
-# Logs
-*.log
-/healthcheck.log
-
 # OS
 .DS_Store
 Thumbs.db
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
+# Env / secrets
+.env
+.env.*
+!.env.example
+.credentials
+*.key
+credentials.json
+.envrc
 
-# Backups
-*.bak
-*.backup
+# Python
+__pycache__
+*.pyc
+.venv
+.venv/
+*.egg-info
+dist
+build
+*.whl
+.eggs
+
+# Node
+node_modules
+
+# Build/dist
+dist
+build
+.next
+output/
+
+# Logs
+*.log
+*.err.log
+
+# Data/runtime
+*.sqlite3
+chroma_db/
+conversation_history.json
+indexed_files.json
+knowledge_base/
+debug_log.jsonl

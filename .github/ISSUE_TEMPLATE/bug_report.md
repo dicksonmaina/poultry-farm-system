@@ -1,24 +1,15 @@
----
-name: Bug report
-about: Report a bug or issue
-title: ''
-labels: bug
-assignees: ''
----
+# Bug Report
 
-## Describe the bug
-A clear description of what the bug is.
+## Description
+A clear description of the bug.
 
-## To reproduce
-Steps to reproduce the behavior.
+## Steps to Reproduce
+1. 
+2. 
+3. 
 
-## Expected behavior
-What you expected to happen.
+## Expected Behavior
+What should happen.
 
-## Screenshots
-If applicable, add screenshots.
-
-## Environment
-- PHP version:
-- MySQL version:
-- Browser:
+## Actual Behavior
+What actually happens.
